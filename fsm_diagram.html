@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cache Controller FSM</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f0f4f8;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 20px 40px;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1a2b45;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #556;
+      margin-bottom: 24px;
+    }
+    svg {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+      display: block;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+      margin-top: 26px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #334;
+    }
+    .legend-box {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      border: 2px solid rgba(0,0,0,0.15);
+    }
+  </style>
+</head>
+<body>
+
+<h1>Cache Controller FSM</h1>
+<p class="subtitle">4-Way Set-Associative Cache &nbsp;|&nbsp; Write-Back + Write-Allocate &nbsp;|&nbsp; LRU Replacement</p>
+
+<svg id="fsm" width="900" height="680" viewBox="0 0 900 680">
+  <defs>
+    <!-- Arrowhead marker -->
+    <marker id="arrow" markerWidth="10" markerHeight="7"
+            refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#444"/>
+    </marker>
+    <!-- Arrowhead for self-loops (shorter) -->
+    <marker id="arrow2" markerWidth="8" markerHeight="6"
+            refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#444"/>
+    </marker>
+    <!-- Drop shadow filter -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="2" dy="3" stdDeviation="4" flood-color="rgba(0,0,0,0.18)"/>
+    </filter>
+  </defs>
+
+  <!-- =====================================================================
+       STATE NODES
+       Positions: IDLE center, READ_HIT top-right, WRITE_HIT right,
+                  READ_MISS bottom-right, WRITE_MISS bottom-left, EVICT left
+       ===================================================================== -->
+
+  <!-- IDLE (center) -->
+  <g id="state-IDLE">
+    <rect x="360" y="270" width="180" height="80" rx="16"
+          fill="#4FC3F7" stroke="#0288D1" stroke-width="2.5" filter="url(#shadow)"/>
+    <text x="450" y="298" text-anchor="middle" font-size="16" font-weight="700" fill="#01478b">IDLE</text>
+    <text x="450" y="318" text-anchor="middle" font-size="11" fill="#014a8c">Wait for CPU request</text>
+    <text x="450" y="334" text-anchor="middle" font-size="11" fill="#014a8c">Decode addr, check tags</text>
+  </g>
+
+  <!-- READ_HIT (top-right) -->
+  <g id="state-READ_HIT">
+    <rect x="620" y="80" width="210" height="80" rx="16"
+          fill="#81C784" stroke="#388E3C" stroke-width="2.5" filter="url(#shadow)"/>
+    <text x="725" y="108" text-anchor="middle" font-size="16" font-weight="700" fill="#1b4d1c">READ_HIT</text>
+    <text x="725" y="128" text-anchor="middle" font-size="11" fill="#1e5620">Return word to CPU</text>
+    <text x="725" y="144" text-anchor="middle" font-size="11" fill="#1e5620">Update LRU → IDLE</text>
+  </g>
+
+  <!-- WRITE_HIT (right) -->
+  <g id="state-WRITE_HIT">
+    <rect x="640" y="280" width="210" height="80" rx="16"
+          fill="#CE93D8" stroke="#7B1FA2" stroke-width="2.5" filter="url(#shadow)"/>
+    <text x="745" y="308" text-anchor="middle" font-size="16" font-weight="700" fill="#4a0870">WRITE_HIT</text>
+    <text x="745" y="328" text-anchor="middle" font-size="11" fill="#4a0870">Write word, mark dirty</text>
+    <text x="745" y="344" text-anchor="middle" font-size="11" fill="#4a0870">Update LRU → IDLE</text>
+  </g>
+
+  <!-- READ_MISS (bottom-right) -->
+  <g id="state-READ_MISS">
+    <rect x="600" y="490" width="220" height="80" rx="16"
+          fill="#FFB74D" stroke="#E65100" stroke-width="2.5" filter="url(#shadow)"/>
+    <text x="710" y="518" text-anchor="middle" font-size="16" font-weight="700" fill="#7a2800">READ_MISS</text>
+    <text x="710" y="538" text-anchor="middle" font-size="11" fill="#7a2800">Fetch block from memory</text>
+    <text x="710" y="554" text-anchor="middle" font-size="11" fill="#7a2800">Install clean → IDLE</text>
+  </g>
+
+  <!-- WRITE_MISS (bottom-left) -->
+  <g id="state-WRITE_MISS">
+    <rect x="60" y="490" width="230" height="80" rx="16"
+          fill="#FF8A65" stroke="#BF360C" stroke-width="2.5" filter="url(#shadow)"/>
+    <text x="175" y="518" text-anchor="middle" font-size="16" font-weight="700" fill="#5c1a00">WRITE_MISS</text>
+    <text x="175" y="538" text-anchor="middle" font-size="11" fill="#5c1a00">Fetch + merge CPU write</text>
+    <text x="175" y="554" text-anchor="middle" font-size="11" fill="#5c1a00">Install dirty → IDLE</text>
+  </g>
+
+  <!-- EVICT (left) -->
+  <g id="state-EVICT">
+    <rect x="50" y="270" width="200" height="80" rx="16"
+          fill="#FFF176" stroke="#F9A825" stroke-width="2.5" filter="url(#shadow)"/>
+    <text x="150" y="298" text-anchor="middle" font-size="16" font-weight="700" fill="#5d4100">EVICT</text>
+    <text x="150" y="318" text-anchor="middle" font-size="11" fill="#5d4100">Writeback dirty block</text>
+    <text x="150" y="334" text-anchor="middle" font-size="11" fill="#5d4100">Wait mem_ready</text>
+  </g>
+
+  <!-- =====================================================================
+       TRANSITIONS
+       ===================================================================== -->
+
+  <!-- IDLE → READ_HIT : cpu_req, rw=0, hit -->
+  <path d="M 540 285 C 570 220 590 170 620 130"
+        fill="none" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="578" y="210" font-size="10.5" fill="#333" text-anchor="middle">cpu_req, rw=0</text>
+  <text x="578" y="224" font-size="10.5" fill="#333" text-anchor="middle">hit</text>
+
+  <!-- READ_HIT → IDLE : immediate -->
+  <path d="M 630 150 C 600 180 560 230 540 290"
+        fill="none" stroke="#333" stroke-width="1.8" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <text x="598" y="230" font-size="10" fill="#555" text-anchor="middle">1 cycle</text>
+
+  <!-- IDLE → WRITE_HIT : cpu_req, rw=1, hit -->
+  <path d="M 540 320 L 640 320"
+        fill="none" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="590" y="313" font-size="10.5" fill="#333" text-anchor="middle">cpu_req, rw=1, hit</text>
+
+  <!-- WRITE_HIT → IDLE : immediate -->
+  <path d="M 640 340 C 610 360 570 370 540 355"
+        fill="none" stroke="#333" stroke-width="1.8" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <text x="578" y="372" font-size="10" fill="#555" text-anchor="middle">1 cycle</text>
+
+  <!-- IDLE → READ_MISS : cpu_req, rw=0, miss, clean -->
+  <path d="M 480 350 C 490 410 560 450 600 510"
+        fill="none" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="530" y="430" font-size="10.5" fill="#333" text-anchor="middle">cpu_req, rw=0</text>
+  <text x="530" y="444" font-size="10.5" fill="#333" text-anchor="middle">miss, clean</text>
+
+  <!-- READ_MISS → IDLE : mem_ready -->
+  <path d="M 600 540 C 550 560 470 510 460 360"
+        fill="none" stroke="#333" stroke-width="1.8" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <text x="497" y="490" font-size="10" fill="#555" text-anchor="middle">mem_ready</text>
+
+  <!-- IDLE → WRITE_MISS : cpu_req, rw=1, miss, clean -->
+  <path d="M 380 350 C 350 420 270 460 230 490"
+        fill="none" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="298" y="418" font-size="10.5" fill="#333" text-anchor="middle">cpu_req, rw=1</text>
+  <text x="298" y="432" font-size="10.5" fill="#333" text-anchor="middle">miss, clean</text>
+
+  <!-- WRITE_MISS → IDLE : mem_ready -->
+  <path d="M 175 490 C 200 440 310 390 360 340"
+        fill="none" stroke="#333" stroke-width="1.8" stroke-dasharray="5,3" marker-end="url(#arrow)"/>
+  <text x="242" y="400" font-size="10" fill="#555" text-anchor="middle">mem_ready</text>
+
+  <!-- IDLE → EVICT : cpu_req, miss, dirty -->
+  <path d="M 360 310 L 250 310"
+        fill="none" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="305" y="303" font-size="10.5" fill="#333" text-anchor="middle">cpu_req, miss</text>
+  <text x="305" y="317" font-size="10.5" fill="#333" text-anchor="middle">dirty evict target</text>
+
+  <!-- EVICT → READ_MISS : mem_ready, rw=0 -->
+  <path d="M 230 350 C 300 440 460 470 600 520"
+        fill="none" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="415" y="469" font-size="10.5" fill="#333" text-anchor="middle">mem_ready, rw=0</text>
+
+  <!-- EVICT → WRITE_MISS : mem_ready, rw=1 -->
+  <path d="M 100 350 C 100 430 100 460 100 490"
+        fill="none" stroke="#333" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="48" y="430" font-size="10.5" fill="#333" text-anchor="middle" transform="rotate(-90,48,430)">mem_ready, rw=1</text>
+
+  <!-- =====================================================================
+       LEGEND BACKGROUND PANEL
+       ===================================================================== -->
+  <rect x="20" y="620" width="860" height="44" rx="10"
+        fill="#e8eef5" stroke="#bcc8d8" stroke-width="1.2"/>
+  <text x="40" y="638" font-size="11" font-weight="600" fill="#334">LEGEND:</text>
+
+  <!-- Legend items inline -->
+  <rect x="105" y="625" width="18" height="18" rx="4" fill="#4FC3F7" stroke="#0288D1" stroke-width="1.5"/>
+  <text x="128" y="638" font-size="11" fill="#222">IDLE</text>
+
+  <rect x="175" y="625" width="18" height="18" rx="4" fill="#81C784" stroke="#388E3C" stroke-width="1.5"/>
+  <text x="198" y="638" font-size="11" fill="#222">READ_HIT</text>
+
+  <rect x="275" y="625" width="18" height="18" rx="4" fill="#FFB74D" stroke="#E65100" stroke-width="1.5"/>
+  <text x="298" y="638" font-size="11" fill="#222">READ_MISS</text>
+
+  <rect x="390" y="625" width="18" height="18" rx="4" fill="#CE93D8" stroke="#7B1FA2" stroke-width="1.5"/>
+  <text x="413" y="638" font-size="11" fill="#222">WRITE_HIT</text>
+
+  <rect x="500" y="625" width="18" height="18" rx="4" fill="#FF8A65" stroke="#BF360C" stroke-width="1.5"/>
+  <text x="523" y="638" font-size="11" fill="#222">WRITE_MISS</text>
+
+  <rect x="620" y="625" width="18" height="18" rx="4" fill="#FFF176" stroke="#F9A825" stroke-width="1.5"/>
+  <text x="643" y="638" font-size="11" fill="#222">EVICT</text>
+
+  <!-- Dash legend -->
+  <line x1="700" y1="634" x2="730" y2="634" stroke="#555" stroke-width="1.8" stroke-dasharray="5,3"/>
+  <text x="735" y="638" font-size="11" fill="#222">= 1-cycle return</text>
+
+  <!-- Second legend row labels for states' descriptions -->
+  <text x="105" y="655" font-size="10" fill="#556">Decode addr</text>
+  <text x="175" y="655" font-size="10" fill="#556">Return word</text>
+  <text x="275" y="655" font-size="10" fill="#556">Fetch + install</text>
+  <text x="390" y="655" font-size="10" fill="#556">Write + dirty</text>
+  <text x="500" y="655" font-size="10" fill="#556">Fetch + merge</text>
+  <text x="620" y="655" font-size="10" fill="#556">Writeback dirty</text>
+
+</svg>
+
+<div class="legend">
+  <div class="legend-item">
+    <div class="legend-box" style="background:#4FC3F7;border-color:#0288D1"></div>
+    <span><strong>IDLE</strong> – Waiting for CPU request</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-box" style="background:#81C784;border-color:#388E3C"></div>
+    <span><strong>READ_HIT</strong> – Return cached word to CPU</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-box" style="background:#FFB74D;border-color:#E65100"></div>
+    <span><strong>READ_MISS</strong> – Fetch block from memory</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-box" style="background:#CE93D8;border-color:#7B1FA2"></div>
+    <span><strong>WRITE_HIT</strong> – Write word, mark dirty</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-box" style="background:#FF8A65;border-color:#BF360C"></div>
+    <span><strong>WRITE_MISS</strong> – Fetch + merge CPU write, mark dirty</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-box" style="background:#FFF176;border-color:#F9A825"></div>
+    <span><strong>EVICT</strong> – Writeback dirty LRU block to memory</span>
+  </div>
+</div>
+
+</body>
+</html>
