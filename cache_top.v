@@ -26,7 +26,22 @@ module cache_top #(
     output wire         mem_req,
     output wire         mem_rw,
     output wire [31:0]  mem_addr,
-    output wire [511:0] mem_wdata
+    output wire [511:0] mem_wdata,
+
+    // Testbench preload interface — cache_memory
+    input  wire                  preload_en,
+    input  wire [6:0]            preload_set,
+    input  wire [1:0]            preload_way,
+    input  wire                  preload_valid,
+    input  wire                  preload_dirty,
+    input  wire [TAG_W-1:0]      preload_tag,
+    input  wire [BLOCK_BITS-1:0] preload_data,
+
+    // Testbench preload interface — lru_controller
+    input  wire        age_preload_en,
+    input  wire [6:0]  age_preload_set,
+    input  wire [1:0]  age_preload_way,
+    input  wire [1:0]  age_preload_val
 );
 
     // Decoder outputs are unused inside the controller (it decodes internally),
@@ -54,13 +69,17 @@ module cache_top #(
         .NUM_SETS(NUM_SETS),
         .NUM_WAYS(NUM_WAYS)
     ) u_lru (
-        .clk          (clk),
-        .rst          (rst),
-        .access_valid (lru_access_valid),
-        .access_set   (lru_access_set),
-        .access_way   (lru_access_way),
-        .query_set    (lru_query_set),
-        .lru_way      (lru_way)
+        .clk              (clk),
+        .rst              (rst),
+        .access_valid     (lru_access_valid),
+        .access_set       (lru_access_set),
+        .access_way       (lru_access_way),
+        .query_set        (lru_query_set),
+        .lru_way          (lru_way),
+        .age_preload_en   (age_preload_en),
+        .age_preload_set  (age_preload_set),
+        .age_preload_way  (age_preload_way),
+        .age_preload_val  (age_preload_val)
     );
 
     wire [6:0]  cm_r_set;
@@ -117,11 +136,18 @@ module cache_top #(
         .w_dirty   (cm_w_dirty),
         .w_tag     (cm_w_tag),
         .w_data    (cm_w_data),
-        .ww_en     (cm_ww_en),
-        .ww_set    (cm_ww_set),
-        .ww_way    (cm_ww_way),
-        .ww_offset (cm_ww_offset),
-        .ww_word   (cm_ww_word)
+        .ww_en         (cm_ww_en),
+        .ww_set        (cm_ww_set),
+        .ww_way        (cm_ww_way),
+        .ww_offset     (cm_ww_offset),
+        .ww_word       (cm_ww_word),
+        .preload_en    (preload_en),
+        .preload_set   (preload_set),
+        .preload_way   (preload_way),
+        .preload_valid (preload_valid),
+        .preload_dirty (preload_dirty),
+        .preload_tag   (preload_tag),
+        .preload_data  (preload_data)
     );
 
     cache_controller #(

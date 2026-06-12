@@ -14,7 +14,13 @@ module lru_controller #(
     input  wire [$clog2(NUM_SETS)-1:0] access_set,
     input  wire [$clog2(NUM_WAYS)-1:0] access_way,
     input  wire [$clog2(NUM_SETS)-1:0] query_set,
-    output reg  [$clog2(NUM_WAYS)-1:0] lru_way
+    output reg  [$clog2(NUM_WAYS)-1:0] lru_way,
+
+    // Testbench preload port — injects specific age values for state setup
+    input  wire                        age_preload_en,
+    input  wire [$clog2(NUM_SETS)-1:0] age_preload_set,
+    input  wire [$clog2(NUM_WAYS)-1:0] age_preload_way,
+    input  wire [1:0]                  age_preload_val
 );
 
     reg [1:0] age [0:NUM_SETS-1][0:NUM_WAYS-1];
@@ -30,6 +36,8 @@ module lru_controller #(
                 age[i][2] <= 2'd2;
                 age[i][3] <= 2'd3;
             end
+        end else if (age_preload_en) begin
+            age[age_preload_set][age_preload_way] <= age_preload_val;
         end else if (access_valid) begin
             begin : update_lru
                 reg [1:0] old_age;
@@ -43,13 +51,21 @@ module lru_controller #(
         end
     end
 
+    // Extract the 4 ages for query_set via continuous assignment so the
+    // always block below can use a short, explicit sensitivity list instead
+    // of @(*) (which Icarus expands to all 512 array entries).
+    wire [1:0] q_age0 = age[query_set][0];
+    wire [1:0] q_age1 = age[query_set][1];
+    wire [1:0] q_age2 = age[query_set][2];
+    wire [1:0] q_age3 = age[query_set][3];
+
     // Find the way with age==3 for query_set (eviction victim)
-    always @(*) begin
+    always @(q_age0 or q_age1 or q_age2 or q_age3) begin
         lru_way = 2'd0; // fallback; a valid age==3 entry always exists after reset
-        for (j = 0; j < NUM_WAYS; j = j + 1) begin
-            if (age[query_set][j] == 2'd3)
-                lru_way = j[1:0];
-        end
+        if (q_age0 == 2'd3) lru_way = 2'd0;
+        if (q_age1 == 2'd3) lru_way = 2'd1;
+        if (q_age2 == 2'd3) lru_way = 2'd2;
+        if (q_age3 == 2'd3) lru_way = 2'd3;
     end
 
 endmodule

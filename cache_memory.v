@@ -46,7 +46,16 @@ module cache_memory #(
     input  wire [6:0]  ww_set,
     input  wire [1:0]  ww_way,
     input  wire [4:0]  ww_offset,   // word index 0–15 within the 64-byte block
-    input  wire [31:0] ww_word
+    input  wire [31:0] ww_word,
+
+    // Testbench preload port — bypasses normal write paths for state injection
+    input  wire                  preload_en,
+    input  wire [6:0]            preload_set,
+    input  wire [1:0]            preload_way,
+    input  wire                  preload_valid,
+    input  wire                  preload_dirty,
+    input  wire [TAG_W-1:0]      preload_tag,
+    input  wire [BLOCK_BITS-1:0] preload_data
 );
 
     reg                  valid_a [0:NUM_SETS-1][0:NUM_WAYS-1];
@@ -55,6 +64,12 @@ module cache_memory #(
     reg [BLOCK_BITS-1:0] data_a  [0:NUM_SETS-1][0:NUM_WAYS-1];
 
     always @(posedge clk) begin
+        if (preload_en) begin
+            valid_a[preload_set][preload_way] <= preload_valid;
+            dirty_a[preload_set][preload_way] <= preload_dirty;
+            tag_a  [preload_set][preload_way] <= preload_tag;
+            data_a [preload_set][preload_way] <= preload_data;
+        end
         if (w_en) begin
             valid_a[w_set][w_way] <= w_valid;
             dirty_a[w_set][w_way] <= w_dirty;

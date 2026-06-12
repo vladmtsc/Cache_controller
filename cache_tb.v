@@ -17,21 +17,47 @@ module cache_tb;
     wire [31:0]  mem_addr;
     wire [511:0] mem_wdata;
 
+    // Preload interface — cache_memory
+    reg         preload_en;
+    reg  [6:0]  preload_set;
+    reg  [1:0]  preload_way;
+    reg         preload_valid;
+    reg         preload_dirty;
+    reg  [17:0] preload_tag;
+    reg  [511:0] preload_data;
+
+    // Preload interface — lru_controller
+    reg        age_preload_en;
+    reg  [6:0] age_preload_set;
+    reg  [1:0] age_preload_way;
+    reg  [1:0] age_preload_val;
+
     cache_top dut (
-        .clk      (clk),
-        .rst      (rst),
-        .cpu_req  (cpu_req),
-        .cpu_rw   (cpu_rw),
-        .cpu_addr (cpu_addr),
-        .cpu_wdata(cpu_wdata),
-        .cpu_rdata(cpu_rdata),
-        .cpu_ready(cpu_ready),
-        .mem_ready(mem_ready),
-        .mem_rdata(mem_rdata),
-        .mem_req  (mem_req),
-        .mem_rw   (mem_rw),
-        .mem_addr (mem_addr),
-        .mem_wdata(mem_wdata)
+        .clk            (clk),
+        .rst            (rst),
+        .cpu_req        (cpu_req),
+        .cpu_rw         (cpu_rw),
+        .cpu_addr       (cpu_addr),
+        .cpu_wdata      (cpu_wdata),
+        .cpu_rdata      (cpu_rdata),
+        .cpu_ready      (cpu_ready),
+        .mem_ready      (mem_ready),
+        .mem_rdata      (mem_rdata),
+        .mem_req        (mem_req),
+        .mem_rw         (mem_rw),
+        .mem_addr       (mem_addr),
+        .mem_wdata      (mem_wdata),
+        .preload_en     (preload_en),
+        .preload_set    (preload_set),
+        .preload_way    (preload_way),
+        .preload_valid  (preload_valid),
+        .preload_dirty  (preload_dirty),
+        .preload_tag    (preload_tag),
+        .preload_data   (preload_data),
+        .age_preload_en  (age_preload_en),
+        .age_preload_set (age_preload_set),
+        .age_preload_way (age_preload_way),
+        .age_preload_val (age_preload_val)
     );
 
     initial clk = 0;
@@ -100,6 +126,46 @@ module cache_tb;
         end
     endtask
 
+    // Inject one cache line via the preload port (1 clock cycle).
+    task preload_cache_line;
+        input [6:0]   set;
+        input [1:0]   way;
+        input         valid;
+        input         dirty;
+        input [17:0]  tag;
+        input [511:0] data;
+        begin
+            @(negedge clk);
+            preload_en    = 1;
+            preload_set   = set;
+            preload_way   = way;
+            preload_valid = valid;
+            preload_dirty = dirty;
+            preload_tag   = tag;
+            preload_data  = data;
+            @(posedge clk);
+            @(negedge clk);
+            preload_en = 0;
+        end
+    endtask
+
+    // Inject one LRU age entry via the preload port (1 clock cycle).
+    task preload_lru;
+        input [6:0] set;
+        input [1:0] way;
+        input [1:0] val;
+        begin
+            @(negedge clk);
+            age_preload_en  = 1;
+            age_preload_set = set;
+            age_preload_way = way;
+            age_preload_val = val;
+            @(posedge clk);
+            @(negedge clk);
+            age_preload_en = 0;
+        end
+    endtask
+
     // TC1: READ HIT
     // Preload set 0 way 0, read same address — expect data returned in 1-2 cycles.
     task test_read_hit;
@@ -110,15 +176,7 @@ module cache_tb;
             block       = 512'h0;
             block[31:0] = 32'hDEAD_BEEF;
 
-            force dut.u_cache_mem.valid_a[0][0] = 1'b1;
-            force dut.u_cache_mem.dirty_a[0][0] = 1'b0;
-            force dut.u_cache_mem.tag_a  [0][0] = 18'd0;
-            force dut.u_cache_mem.data_a [0][0] = block;
-            @(posedge clk);
-            release dut.u_cache_mem.valid_a[0][0];
-            release dut.u_cache_mem.dirty_a[0][0];
-            release dut.u_cache_mem.tag_a  [0][0];
-            release dut.u_cache_mem.data_a [0][0];
+            preload_cache_line(0, 0, 1, 0, 18'd0, block);
 
             do_read(32'h0000_0000); // tag=0, set=0, offset=0
 
@@ -156,15 +214,7 @@ module cache_tb;
     task test_write_hit;
         begin
             $display("\n=== TC3: WRITE HIT ===");
-            force dut.u_cache_mem.valid_a[2][0] = 1'b1;
-            force dut.u_cache_mem.dirty_a[2][0] = 1'b0;
-            force dut.u_cache_mem.tag_a  [2][0] = 18'd0;
-            force dut.u_cache_mem.data_a [2][0] = 512'h0;
-            @(posedge clk);
-            release dut.u_cache_mem.valid_a[2][0];
-            release dut.u_cache_mem.dirty_a[2][0];
-            release dut.u_cache_mem.tag_a  [2][0];
-            release dut.u_cache_mem.data_a [2][0];
+            preload_cache_line(2, 0, 1, 0, 18'd0, 512'h0);
 
             do_write(32'h0000_0100, 32'h1234_5678); // tag=0, set=2, offset=0
             @(posedge clk);
@@ -186,7 +236,6 @@ module cache_tb;
     // The filled way is whichever the LRU selected; scan all 4 ways for the result.
     task test_write_miss;
         reg [511:0] mem_block;
-        integer w;
         reg found_dirty, found_data;
         begin
             $display("\n=== TC4: WRITE MISS (Write Allocate) ===");
@@ -201,10 +250,14 @@ module cache_tb;
 
             found_dirty = 0;
             found_data  = 0;
-            for (w = 0; w < 4; w = w + 1) begin
-                if (dut.u_cache_mem.dirty_a[3][w] === 1'b1) found_dirty = 1;
-                if (dut.u_cache_mem.data_a[3][w][31:0] === 32'hBBBB_BBBB) found_data = 1;
-            end
+            if (dut.u_cache_mem.dirty_a[3][0] === 1'b1) found_dirty = 1;
+            if (dut.u_cache_mem.dirty_a[3][1] === 1'b1) found_dirty = 1;
+            if (dut.u_cache_mem.dirty_a[3][2] === 1'b1) found_dirty = 1;
+            if (dut.u_cache_mem.dirty_a[3][3] === 1'b1) found_dirty = 1;
+            if (dut.u_cache_mem.data_a[3][0][31:0] === 32'hBBBB_BBBB) found_data = 1;
+            if (dut.u_cache_mem.data_a[3][1][31:0] === 32'hBBBB_BBBB) found_data = 1;
+            if (dut.u_cache_mem.data_a[3][2][31:0] === 32'hBBBB_BBBB) found_data = 1;
+            if (dut.u_cache_mem.data_a[3][3][31:0] === 32'hBBBB_BBBB) found_data = 1;
 
             if (found_dirty)
                 $display("TC4 PASS: dirty bit set after write miss");
@@ -223,24 +276,16 @@ module cache_tb;
     // Expect LRU dirty line written back before new block is filled.
     task test_evict;
         reg [511:0] mem_block;
-        integer w;
         begin
             $display("\n=== TC5: EVICT (dirty writeback) ===");
-            for (w = 0; w < 4; w = w + 1) begin
-                force dut.u_cache_mem.valid_a[4][w] = 1'b1;
-                force dut.u_cache_mem.dirty_a[4][w] = 1'b1;
-                force dut.u_cache_mem.tag_a  [4][w] = w[17:0] + 18'd10;
-                force dut.u_cache_mem.data_a [4][w] = {16{w[31:0]}};
-                @(posedge clk);
-                release dut.u_cache_mem.valid_a[4][w];
-                release dut.u_cache_mem.dirty_a[4][w];
-                release dut.u_cache_mem.tag_a  [4][w];
-                release dut.u_cache_mem.data_a [4][w];
-            end
+            preload_cache_line(4, 0, 1, 1, 18'd10, {16{32'd0}});
+            preload_cache_line(4, 1, 1, 1, 18'd11, {16{32'd1}});
+            preload_cache_line(4, 2, 1, 1, 18'd12, {16{32'd2}});
+            preload_cache_line(4, 3, 1, 1, 18'd13, {16{32'd3}});
 
             mem_block = 512'hFF;
 
-            // addr: tag=20, set=4, offset=0 → triggers EVICT then READ_MISS
+            // addr: tag=20, set=4, offset=0 — triggers EVICT then READ_MISS
             fork
                 do_read(32'h0005_0200);
                 begin
@@ -260,52 +305,27 @@ module cache_tb;
     endtask
 
     // TC6: LRU order
-    // Force ages in set 5 so way 0 is LRU (age=3), verify lru_way outputs 0.
+    // Preload ages in set 5 so way 0 is LRU (age=3), verify lru_way outputs 0.
     task test_lru_order;
         reg [1:0] victim;
         begin
             $display("\n=== TC6: LRU ORDER VERIFICATION ===");
-            force dut.u_cache_mem.valid_a[5][0] = 1'b1;
-            force dut.u_cache_mem.dirty_a[5][0] = 1'b0;
-            force dut.u_cache_mem.tag_a  [5][0] = 18'd100;
-            force dut.u_cache_mem.data_a [5][0] = 512'h0;
+            preload_cache_line(5, 0, 1, 0, 18'd100, 512'h0);
+            preload_cache_line(5, 1, 1, 0, 18'd101, 512'h0);
+            preload_cache_line(5, 2, 1, 0, 18'd102, 512'h0);
+            preload_cache_line(5, 3, 1, 0, 18'd103, 512'h0);
 
-            force dut.u_cache_mem.valid_a[5][1] = 1'b1;
-            force dut.u_cache_mem.dirty_a[5][1] = 1'b0;
-            force dut.u_cache_mem.tag_a  [5][1] = 18'd101;
-            force dut.u_cache_mem.data_a [5][1] = 512'h0;
+            // Access order 0,1,2,3 then re-access 1 — way 0 = age 3 (LRU victim)
+            preload_lru(5, 0, 2'd3);
+            preload_lru(5, 1, 2'd0);
+            preload_lru(5, 2, 2'd2);
+            preload_lru(5, 3, 2'd1);
 
-            force dut.u_cache_mem.valid_a[5][2] = 1'b1;
-            force dut.u_cache_mem.dirty_a[5][2] = 1'b0;
-            force dut.u_cache_mem.tag_a  [5][2] = 18'd102;
-            force dut.u_cache_mem.data_a [5][2] = 512'h0;
-
-            force dut.u_cache_mem.valid_a[5][3] = 1'b1;
-            force dut.u_cache_mem.dirty_a[5][3] = 1'b0;
-            force dut.u_cache_mem.tag_a  [5][3] = 18'd103;
-            force dut.u_cache_mem.data_a [5][3] = 512'h0;
-
-            @(posedge clk);
-            release dut.u_cache_mem.valid_a[5][0]; release dut.u_cache_mem.dirty_a[5][0];
-            release dut.u_cache_mem.tag_a[5][0];   release dut.u_cache_mem.data_a[5][0];
-            release dut.u_cache_mem.valid_a[5][1]; release dut.u_cache_mem.dirty_a[5][1];
-            release dut.u_cache_mem.tag_a[5][1];   release dut.u_cache_mem.data_a[5][1];
-            release dut.u_cache_mem.valid_a[5][2]; release dut.u_cache_mem.dirty_a[5][2];
-            release dut.u_cache_mem.tag_a[5][2];   release dut.u_cache_mem.data_a[5][2];
-            release dut.u_cache_mem.valid_a[5][3]; release dut.u_cache_mem.dirty_a[5][3];
-            release dut.u_cache_mem.tag_a[5][3];   release dut.u_cache_mem.data_a[5][3];
-
-            // Access order 0,1,2,3 then re-access 1 → way 0 = age 3 (LRU victim)
-            force dut.u_lru.age[5][0] = 2'd3;
-            force dut.u_lru.age[5][1] = 2'd0;
-            force dut.u_lru.age[5][2] = 2'd2;
-            force dut.u_lru.age[5][3] = 2'd1;
-            @(posedge clk);
-            release dut.u_lru.age[5][0];
-            release dut.u_lru.age[5][1];
-            release dut.u_lru.age[5][2];
-            release dut.u_lru.age[5][3];
-            @(posedge clk);
+            // Point cpu_addr at set 5 so lru_query_set=5 in the combinational path
+            // (lru_query_set = cpu_addr[13:7] while FSM is IDLE).
+            // Without this, query_set still equals 4 (leftover from TC5's address).
+            cpu_addr = 32'h0000_0280; // bits[13:7] = 5
+            @(posedge clk); // wait for q_age wires and lru_way to settle
 
             victim = dut.u_ctrl.lru_way;
             $display("TC6: LRU victim way = %0d (expected 0)", victim);
@@ -334,13 +354,21 @@ module cache_tb;
     endtask
 
     initial begin
+        $dumpfile("cache_wave.vcd");
+        $dumpvars(0, cache_tb);
+
         total_ops = 0;
         hit_ops   = 0;
 
-        rst       = 1;
-        cpu_req   = 0; cpu_rw    = 0;
-        cpu_addr  = 0; cpu_wdata = 0;
-        mem_ready = 0; mem_rdata = 512'h0;
+        rst           = 1;
+        cpu_req       = 0; cpu_rw    = 0;
+        cpu_addr      = 0; cpu_wdata = 0;
+        mem_ready     = 0; mem_rdata = 512'h0;
+        preload_en    = 0; preload_set = 0; preload_way = 0;
+        preload_valid = 0; preload_dirty = 0;
+        preload_tag   = 0; preload_data  = 512'h0;
+        age_preload_en  = 0; age_preload_set = 0;
+        age_preload_way = 0; age_preload_val = 0;
         repeat (4) @(posedge clk);
         rst = 0;
         @(posedge clk);

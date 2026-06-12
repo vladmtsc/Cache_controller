@@ -123,14 +123,14 @@ La **reset**, vârstele sunt inițializate la 0, 1, 2, 3 pentru căile 0–3, as
 
 ## 8. Analiza performanței simulate
 
-Testbench-ul (`cache_tb.v`) acoperă 7 scenarii de test, din care primele 3 (read hit, write hit, reaccesare după fill) produc hit-uri, iar restul produc miss-uri.
+Testbench-ul (`cache_tb.v`) acoperă 7 scenarii de test, din care TC1 (read hit) și TC3 (write hit) produc hit-uri, iar restul produc miss-uri deliberate pentru a acoperi toate stările FSM.
 
 **Estimări de latență**:
 - Read/Write Hit: **1 ciclu** (acces combinațional la tag + date)
 - Read/Write Miss (fără evicție): **N + 1 cicluri** (N = latența memoriei)
 - Miss cu evicție dirty: **2N + 1 cicluri** (writeback + fill)
 
-**Rata de hit** în testbench: aproximativ 3 din 9 operații = ~33%. Aceasta este mică deoarece testele sunt proiectate deliberat să acopere toate cazurile (inclusiv miss-uri), nu să simuleze un workload real.
+**Rata de hit** în testbench: 2 din 9 operații = ~22%. Aceasta este mică deoarece testele sunt proiectate deliberat să acopere toate cazurile (inclusiv miss-uri), nu să simuleze un workload real.
 
 Într-un workload real cu localitate bună (ex. parcurgere secvențială a unui array), rata de hit pentru un cache de 32 KB cu 4-way ar depăși 95%, cu latența medie efectivă mult mai mică decât latența memoriei principale.
 
